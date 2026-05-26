@@ -10,19 +10,25 @@ st.title("🎬 AI Storyboard to Cinematic Video Prompt Generator | مخرج ال
 st.write("مولد برومتات صورة لوحة لقطات - برومبت تحريكها بإحترافية")
 st.write("أدخل فكرتك لتوليد برومبت احترافي للصور أو الفيديوهات!")
 
-# 2. سحب المفتاح السري بأمان
-load_dotenv()
-api_key = os.getenv("GEMINI_API_KEY")
 
-if not api_key:
-    st.error("⚠️ لم يتم العثور على مفتاح الـ API! تأكد من ملف .env")
+# 2. سحب المفاتيح السرية بأمان
+load_dotenv()
+keys_string = os.getenv("GEMINI_API_KEYS", "")
+# تنظيف المفاتيح ووضعها في قائمة
+api_keys = [k.strip() for k in keys_string.split(",") if k.strip()]
+
+if not api_keys:
+    st.error("⚠️ لم يتم العثور على مفاتيح الـ API! تأكد من وجود GEMINI_API_KEYS في ملف .env")
     st.stop()
 
-# 3. حفظ قناة الاتصال في ذاكرة المتصفح لتجنب انقطاع الاتصال
-if "ai_client" not in st.session_state:
-    st.session_state.ai_client = genai.Client(api_key=api_key)
+# 3. إعداد حالة المتصفح (Session State) للمفاتيح والرسائل
+if "current_key_index" not in st.session_state:
+    st.session_state.current_key_index = 0
 
-# 4. التعليمات الصارمة (System Instructions) المأخوذة من ملفات Tenframe
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+# 4. التعليمات الصارمة (System Instructions)
 tenframe_system_instructions = """
 You are Tenframe, a specialized assistant that creates 15-second, 10-frame storyboard contact sheets as ready-to-paste image generation prompts. After a sheet is built, you can also produce a matching Seedance 2.0 video prompt.
 
@@ -57,41 +63,91 @@ generation_config = types.GenerateContentConfig(
     system_instruction=tenframe_system_instructions,
 )
 
-# 5. إعداد جلسة الدردشة وربطها بالاتصال الدائم
-if "chat_session" not in st.session_state:
-    st.session_state.chat_session = st.session_state.ai_client.chats.create(
-        model='gemini-2.5-flash', # يمكنك تغييره إلى gemini-1.5-flash إذا استمر ضغط السيرفر
-        config=generation_config
+# 5. دالة لإنشاء أو إعادة بناء جلسة الدردشة
+def create_chat_session(exclude_last_msg=False):
+    """
+    تُنشئ جلسة جديدة بالمفتاح النشط حالياً، وتسترجع سجل المحادثة.
+    exclude_last_msg: تستخدم لتجاهل آخر رسالة عند محاولة إعادة الإرسال بعد الفشل.
+    """
+    current_api_key = api_keys[st.session_state.current_key_index]
+    client = genai.Client(api_key=current_api_key)
+    
+    # إعادة بناء تاريخ المحادثة لصيغة تناسب الـ SDK الجديد
+    history_contents = []
+    msgs_to_include = st.session_state.messages[:-1] if exclude_last_msg else st.session_state.messages
+    
+    for msg in msgs_to_include:
+        role = "user" if msg["role"] == "user" else "model"
+        history_contents.append(
+            types.Content(role=role, parts=[types.Part.from_text(text=msg["content"])])
+        )
+        
+    return client.chats.create(
+        model='gemini-2.5-flash',
+        config=generation_config,
+        history=history_contents
     )
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+
+# تهيئة أول جلسة اتصال
+if "chat_session" not in st.session_state:
+    st.session_state.chat_session = create_chat_session()
 
 # عرض الرسائل السابقة على الشاشة
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-# 6. مربع إدخال المستخدم ومعالجة الأخطاء
+# 6. مربع إدخال المستخدم ومعالجة الأخطاء والتبديل التلقائي
 user_input = st.chat_input("اكتب فكرتك هنا (مثال: روتين صباحي بنمط POV)...")
 
 if user_input:
-    # عرض رسالة المستخدم
+    # 1. عرض رسالة المستخدم وإضافتها للسجل
     st.session_state.messages.append({"role": "user", "content": user_input})
     with st.chat_message("user"):
         st.markdown(user_input)
 
-    # جلب وعرض رد الذكاء الاصطناعي مع معالجة الأخطاء
+    # 2. جلب وعرض رد الذكاء الاصطناعي مع التبديل الذكي
     with st.chat_message("assistant"):
+        message_placeholder = st.empty()
+        
         with st.spinner("جاري التحليل وبناء اللوحة..."):
-            try:
-                # محاولة إرسال الطلب
-                response = st.session_state.chat_session.send_message(user_input)
-                st.markdown(response.text)
-                st.session_state.messages.append({"role": "assistant", "content": response.text})
-            except Exception as e:
-                # معالجة الانقطاعات وضغط السيرفر
-                error_msg = str(e)
-                if "503" in error_msg or "high demand" in error_msg.lower():
-                    st.warning("⏳ خوادم الذكاء الاصطناعي عليها ضغط عالٍ حالياً. يرجى الانتظار ثوانٍ والمحاولة مرة أخرى.")
-                else:
-                    st.error(f"⚠️ عذراً، حدث خطأ في الاتصال: {error_msg}")
+            success = False
+            attempts = 0
+            max_attempts = len(api_keys)
+            
+            while not success and attempts < max_attempts:
+                try:
+                    # محاولة إرسال الطلب
+                    response = st.session_state.chat_session.send_message(user_input)
+                    message_placeholder.markdown(response.text)
+                    st.session_state.messages.append({"role": "assistant", "content": response.text})
+                    success = True
+                    
+                except Exception as e:
+                    error_msg = str(e).lower()
+                    
+                    # التحقق مما إذا كان الخطأ بسبب نفاد الحصة (429, quota, exhausted)
+                    if "429" in error_msg or "quota" in error_msg or "exhausted" in error_msg:
+                        attempts += 1
+                        if attempts < max_attempts:
+                            # الانتقال للمفتاح التالي
+                            st.session_state.current_key_index = (st.session_state.current_key_index + 1) % len(api_keys)
+                            
+                            # إشعار المستخدم بالتبديل
+                            st.toast(f"🔄 نفد رصيد المفتاح.. جاري التبديل للمفتاح رقم {st.session_state.current_key_index + 1}", icon="♻️")
+                            
+                            # إعادة بناء جلسة الدردشة بالمفتاح الجديد (مع استبعاد رسالة المستخدم الأخيرة من الـ History لتجنب التكرار)
+                            st.session_state.chat_session = create_chat_session(exclude_last_msg=True)
+                        else:
+                            message_placeholder.error("⚠️ انتهت الحصة (Quota) في جميع المفاتيح المتاحة.")
+                            break
+                            
+                    # أخطاء الضغط العالي المؤقت (503)
+                    elif "503" in error_msg or "high demand" in error_msg:
+                        message_placeholder.warning("⏳ خوادم الذكاء الاصطناعي عليها ضغط عالٍ حالياً. يرجى المحاولة بعد قليل.")
+                        break
+                        
+                    # أي أخطاء أخرى غير متوقعة
+                    else:
+                        message_placeholder.error(f"⚠️ عذراً، حدث خطأ غير متوقع: {error_msg}")
+                        break
