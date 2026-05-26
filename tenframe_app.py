@@ -1,6 +1,4 @@
-import os
 import streamlit as st
-from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
@@ -74,7 +72,9 @@ def create_chat_session(exclude_last_msg=False):
     تُنشئ جلسة جديدة بالمفتاح النشط حالياً، وتسترجع سجل المحادثة.
     """
     current_api_key = api_keys[st.session_state.current_key_index]
-    client = genai.Client(api_key=current_api_key)
+    
+    # التعديل الجوهري هنا: حفظ الـ Client في الـ session_state يمنع إغلاق القناة بشكل تلقائي بواسطة Python
+    st.session_state.ai_client = genai.Client(api_key=current_api_key)
     
     history_contents = []
     msgs_to_include = st.session_state.messages[:-1] if exclude_last_msg else st.session_state.messages
@@ -85,13 +85,13 @@ def create_chat_session(exclude_last_msg=False):
             types.Content(role=role, parts=[types.Part.from_text(text=msg["content"])])
         )
         
-    return client.chats.create(
+    return st.session_state.ai_client.chats.create(
         model='gemini-2.5-flash',
         config=generation_config,
         history=history_contents
     )
 
-# تهيئة أول جلسة اتصال
+# تهيئة أول جلسة اتصال عند تشغيل التطبيق
 if "chat_session" not in st.session_state:
     st.session_state.chat_session = create_chat_session()
 
@@ -109,7 +109,7 @@ if user_input:
     with st.chat_message("user"):
         st.markdown(user_input)
 
-    # 2. جلب وعرض رد الذكاء الاصطناعي مع التبديل الذكي
+    # 2. جلب وعرض رد الذكاء الاصطناعي مع التبديل الذكي للمفاتيح
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
         
@@ -128,6 +128,7 @@ if user_input:
                 except Exception as e:
                     error_msg = str(e).lower()
                     
+                    # معالجة أخطاء تخطي الحصة اليومية للمفتاح (Quota أو Rate limit)
                     if "429" in error_msg or "quota" in error_msg or "exhausted" in error_msg:
                         attempts += 1
                         if attempts < max_attempts:
@@ -138,10 +139,12 @@ if user_input:
                             message_placeholder.error("⚠️ انتهت الحصة (Quota) في جميع المفاتيح المتاحة.")
                             break
                             
+                    # معالجة أخطاء الضغط المؤقت على خوادم جوجل (503)
                     elif "503" in error_msg or "high demand" in error_msg:
                         message_placeholder.warning("⏳ خوادم الذكاء الاصطناعي عليها ضغط عالٍ حالياً. يرجى المحاولة بعد قليل.")
                         break
                         
+                    # أي أخطاء أخرى غير متوقعة
                     else:
-                        message_placeholder.error(f"⚠️ عذراً، حدث خطأ غير متوقع: {error_msg}")
+                        message_placeholder.error(f"⚠️ عذراً، حدث خطأ غير متوقع: {str(e)}")
                         break
