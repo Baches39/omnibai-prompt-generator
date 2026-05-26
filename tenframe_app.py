@@ -6,7 +6,7 @@ from google.genai import types
 
 # 1. إعدادات شكل صفحة الويب
 st.set_page_config(page_title="Tenframe Storyboard Maker", page_icon="🎬", layout="centered")
-st.title("🎬 صانع لوحات القصة (Tenframe)")
+st.title("🎬 مولد برومتات صورة storyboard - برومبت تحريكها باخترافيه ")
 st.write("أدخل فكرتك لتوليد برومبت احترافي للصور أو الفيديوهات!")
 
 # 2. سحب المفتاح السري بأمان
