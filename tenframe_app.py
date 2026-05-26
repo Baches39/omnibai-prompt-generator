@@ -10,15 +10,20 @@ st.title("🎬 AI Storyboard to Cinematic Video Prompt Generator | مخرج ال
 st.write("مولد برومتات صورة لوحة لقطات - برومبت تحريكها بإحترافية")
 st.write("أدخل فكرتك لتوليد برومبت احترافي للصور أو الفيديوهات!")
 
-
-# 2. سحب المفاتيح السرية بأمان
-load_dotenv()
-keys_string = os.getenv("GEMINI_API_KEYS", "")
-# تنظيف المفاتيح ووضعها في قائمة
-api_keys = [k.strip() for k in keys_string.split(",") if k.strip()]
+# 2. سحب المفاتيح السرية من Streamlit Secrets
+try:
+    # جلب المفاتيح سواء كانت نصاً مفصولاً بفاصلة أو قائمة (List) جاهزة من إعدادات TOML
+    keys_data = st.secrets["GEMINI_API_KEYS"]
+    if isinstance(keys_data, list):
+        api_keys = keys_data
+    else:
+        api_keys = [k.strip() for k in keys_data.split(",") if k.strip()]
+except KeyError:
+    st.error("⚠️ لم يتم العثور على المفاتيح! تأكد من إضافة GEMINI_API_KEYS في إعدادات st.secrets.")
+    st.stop()
 
 if not api_keys:
-    st.error("⚠️ لم يتم العثور على مفاتيح الـ API! تأكد من وجود GEMINI_API_KEYS في ملف .env")
+    st.error("⚠️ قائمة المفاتيح فارغة!")
     st.stop()
 
 # 3. إعداد حالة المتصفح (Session State) للمفاتيح والرسائل
@@ -67,12 +72,10 @@ generation_config = types.GenerateContentConfig(
 def create_chat_session(exclude_last_msg=False):
     """
     تُنشئ جلسة جديدة بالمفتاح النشط حالياً، وتسترجع سجل المحادثة.
-    exclude_last_msg: تستخدم لتجاهل آخر رسالة عند محاولة إعادة الإرسال بعد الفشل.
     """
     current_api_key = api_keys[st.session_state.current_key_index]
     client = genai.Client(api_key=current_api_key)
     
-    # إعادة بناء تاريخ المحادثة لصيغة تناسب الـ SDK الجديد
     history_contents = []
     msgs_to_include = st.session_state.messages[:-1] if exclude_last_msg else st.session_state.messages
     
@@ -117,7 +120,6 @@ if user_input:
             
             while not success and attempts < max_attempts:
                 try:
-                    # محاولة إرسال الطلب
                     response = st.session_state.chat_session.send_message(user_input)
                     message_placeholder.markdown(response.text)
                     st.session_state.messages.append({"role": "assistant", "content": response.text})
@@ -126,28 +128,20 @@ if user_input:
                 except Exception as e:
                     error_msg = str(e).lower()
                     
-                    # التحقق مما إذا كان الخطأ بسبب نفاد الحصة (429, quota, exhausted)
                     if "429" in error_msg or "quota" in error_msg or "exhausted" in error_msg:
                         attempts += 1
                         if attempts < max_attempts:
-                            # الانتقال للمفتاح التالي
                             st.session_state.current_key_index = (st.session_state.current_key_index + 1) % len(api_keys)
-                            
-                            # إشعار المستخدم بالتبديل
                             st.toast(f"🔄 نفد رصيد المفتاح.. جاري التبديل للمفتاح رقم {st.session_state.current_key_index + 1}", icon="♻️")
-                            
-                            # إعادة بناء جلسة الدردشة بالمفتاح الجديد (مع استبعاد رسالة المستخدم الأخيرة من الـ History لتجنب التكرار)
                             st.session_state.chat_session = create_chat_session(exclude_last_msg=True)
                         else:
                             message_placeholder.error("⚠️ انتهت الحصة (Quota) في جميع المفاتيح المتاحة.")
                             break
                             
-                    # أخطاء الضغط العالي المؤقت (503)
                     elif "503" in error_msg or "high demand" in error_msg:
                         message_placeholder.warning("⏳ خوادم الذكاء الاصطناعي عليها ضغط عالٍ حالياً. يرجى المحاولة بعد قليل.")
                         break
                         
-                    # أي أخطاء أخرى غير متوقعة
                     else:
                         message_placeholder.error(f"⚠️ عذراً، حدث خطأ غير متوقع: {error_msg}")
                         break
