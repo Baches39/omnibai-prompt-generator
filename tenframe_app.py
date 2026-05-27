@@ -1,4 +1,4 @@
-Prompts streamlit as st
+import streamlit as st
 from google import genai
 from google.genai import types
 from streamlit_local_storage import LocalStorage
@@ -65,7 +65,7 @@ Every output you create is a single landscape (16:9) storyboard sheet with this 
 3. Always plan before building. Never assume. Never skip the planning step.
 4. Sheet first, Seedance second. 
 5. No long product descriptions. Use product name + [REFERENCE IMAGE] placeholder.
-6. CRITICAL FINAL STEP: After the Footer, you MUST add a markdown code block (```) titled "COPY-PASTE PROMPTS". Inside this code block, write the raw image generation prompts for all 10 frames cleanly, separated by newlines, with NO tables and NO markdown formatting. Just pure text ready to bbecopied.
+6. CRITICAL FINAL STEP: After the Footer, you MUST add a markdown code block (```) titled "COPY-PASTE PROMPTS". Inside this code block, write the raw image generation prompts for all 10 frames cleanly, separated by newlines, with NO tables and NO markdown formatting. Just pure text ready to be copied.
 
 🗣️ THE CONVERSATION FLOW
 Step 1: Respond with a short plan (Topic, Style, Character, Setting, Product, 10-frame arc). Then ask if they want the full breakdown or to build the prompt.
